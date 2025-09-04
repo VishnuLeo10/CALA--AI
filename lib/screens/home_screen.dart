@@ -1,72 +1,66 @@
-// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  // ✅ Made static const (since HomeScreen is StatelessWidget)
+  static const List<Map<String, dynamic>> features = [
+    {"title": "Diet Tracker", "icon": Icons.restaurant_menu, "route": "/diet"},
+    {"title": "Water Tracker", "icon": Icons.water_drop, "route": "/water"},
+    {"title": "BMI Calculator", "icon": Icons.monitor_weight, "route": "/bmi"},
+    {"title": "Chatbot", "icon": Icons.chat_bubble_outline, "route": "/chatbot"},
+    {"title": "Reports", "icon": Icons.bar_chart, "route": "/reports"},
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CALAI Home'),
-        backgroundColor: Colors.green,
+        title: const Text("CALAI Dashboard"),
+        centerTitle: true,
+        backgroundColor: Colors.teal,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: GridView.count(
-          crossAxisCount: 2,
+      body: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: features.length,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, // ✅ 2 columns
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
-          children: [
-            _buildCard(
-              context,
-              icon: Icons.fastfood,
-              label: 'Diet Tracker',
-              route: '/diet',
-            ),
-            _buildCard(
-              context,
-              icon: Icons.water_drop,
-              label: 'Water Tracker',
-              route: '/water',
-            ),
-            _buildCard(
-              context,
-              icon: Icons.monitor_weight,
-              label: 'BMI Calculator',
-              route: '/bmi',
-            ),
-            _buildCard(
-              context,
-              icon: Icons.chat_bubble_outline,
-              label: 'Chatbot',
-              route: '/chatbot',
-            ),
-          ],
+          childAspectRatio: 1.0, // ✅ Square cards
         ),
-      ),
-    );
-  }
-
-  Widget _buildCard(BuildContext context,
-      {required IconData icon, required String label, required String route}) {
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, route),
-      child: Card(
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        color: Colors.green.shade50,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 48, color: Colors.green),
-            const SizedBox(height: 12),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            )
-          ],
-        ),
+        itemBuilder: (context, index) {
+          final feature = features[index];
+          return GestureDetector(
+            onTap: () => Navigator.pushNamed(context, feature["route"]),
+            child: Card(
+              elevation: 6,
+              shadowColor: Colors.teal.withOpacity(0.3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(feature["icon"], size: 52, color: Colors.teal),
+                    const SizedBox(height: 14),
+                    Text(
+                      feature["title"],
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
