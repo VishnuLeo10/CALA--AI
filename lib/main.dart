@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 
 // Import your screens
 import 'screens/login_screen.dart';
@@ -10,7 +12,11 @@ import 'screens/bmi_calculator.dart';
 import 'screens/chatbot_screen.dart';
 import 'screens/reports_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const CALAIApp());
 }
 

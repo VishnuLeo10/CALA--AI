@@ -1,6 +1,8 @@
 // lib/screens/bmi_calculator.dart
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class BMICalculatorScreen extends StatefulWidget {
   const BMICalculatorScreen({super.key});
@@ -15,7 +17,10 @@ class _BMICalculatorScreenState extends State<BMICalculatorScreen> {
   double? _bmi;
   String _status = '';
 
-  void _calculateBMI() {
+  final _auth = FirebaseAuth.instance;
+  final _firestore = FirebaseFirestore.instance;
+
+  void _calculateBMI() async {
     double heightInMeters = _height / 100;
     double bmi = _weight / pow(heightInMeters, 2);
 
@@ -34,6 +39,18 @@ class _BMICalculatorScreenState extends State<BMICalculatorScreen> {
       _bmi = bmi;
       _status = status;
     });
+
+    // Save to Firestore for the current user
+    final user = _auth.currentUser;
+    if (user != null) {
+      await _firestore.collection('users').doc(user.uid).collection('bmi_history').add({
+        'bmi': bmi,
+        'status': status,
+        'height': _height,
+        'weight': _weight,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   @override

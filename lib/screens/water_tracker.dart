@@ -1,5 +1,6 @@
-// lib/screens/water_tracker.dart
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class WaterTrackerScreen extends StatefulWidget {
   const WaterTrackerScreen({super.key});
@@ -12,18 +13,65 @@ class _WaterTrackerScreenState extends State<WaterTrackerScreen> {
   int _glassesDrunk = 0;
   final int _dailyGoal = 8;
 
-  void _incrementGlass() {
-    if (_glassesDrunk < _dailyGoal) {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late String _userId;
+
+  @override
+  void initState() {
+    super.initState();
+    _userId = _auth.currentUser!.uid;
+    _loadWaterData();
+  }
+
+  // Load today's water intake from Firestore
+  Future<void> _loadWaterData() async {
+    final doc = await _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('water')
+        .doc(_todayDocId())
+        .get();
+
+    if (doc.exists) {
       setState(() {
-        _glassesDrunk++;
+        _glassesDrunk = doc['glasses'] ?? 0;
       });
     }
   }
 
-  void _resetGlasses() {
+  // Increment glasses and save to Firestore
+  Future<void> _incrementGlass() async {
+    if (_glassesDrunk < _dailyGoal) {
+      setState(() {
+        _glassesDrunk++;
+      });
+      await _firestore
+          .collection('users')
+          .doc(_userId)
+          .collection('water')
+          .doc(_todayDocId())
+          .set({'glasses': _glassesDrunk, 'updatedAt': FieldValue.serverTimestamp()});
+    }
+  }
+
+  // Reset glasses and update Firestore
+  Future<void> _resetGlasses() async {
     setState(() {
       _glassesDrunk = 0;
     });
+    await _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('water')
+        .doc(_todayDocId())
+        .set({'glasses': 0, 'updatedAt': FieldValue.serverTimestamp()});
+  }
+
+  // Use date string as document ID
+  String _todayDocId() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month}-${now.day}';
   }
 
   @override
