@@ -1,161 +1,456 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
-class ChatbotScreen extends StatefulWidget {
-  const ChatbotScreen({super.key});
+class DietChatbot extends StatefulWidget {
+  const DietChatbot({Key? key}) : super(key: key);
 
   @override
-  State<ChatbotScreen> createState() => _ChatbotScreenState();
-} 
+  State<DietChatbot> createState() => _DietChatbotState();
+}
 
-class _ChatbotScreenState extends State<ChatbotScreen> {
-  final TextEditingController _controller = TextEditingController();
-  final List<Map<String, String>> _messages = [];
+class _DietChatbotState extends State<DietChatbot> {
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<ChatMessage> _messages = [];
   bool _isLoading = false;
+  late final Gemini gemini;
 
-  // Human-like responses
-  final Map<String, String> _keywordReplies = {
-    "hi": "Hey! Great to see you. How's your day going?",
-    "hello": "Hello! How are you feeling today?",
-    "hey": "Hi there! Ready to chat about staying healthy?",
-    " calculate my bmi": "You can check your BMI using the calculator on the dashboard—it helps track your health!",
-    "bye": "It was nice talking to you! Take care and stay active!",
-    "midterm snack": "Try enjoying some fresh fruits or a handful of nuts instead of chips—they keep you full and energized!",
-    "increase protein in diet": "Adding eggs, chicken, or legumes to your meals can really help you stay strong and healthy.",
-    "tips for weight loss": "Focus on balanced meals and regular movement. Small, consistent changes make a huge difference!",
-    "tips for weight gain": "Eating nutrient-rich meals with protein and healthy fats can help you gain weight safely.",
-    "opinion about exercise": "A little daily exercise goes a long way—maybe a short walk or stretching today?",
-    "proper sleep": "Try to get 6–8 hours of restful sleep—it makes your body and mind feel great.",
-    "sugar cut": "Sweet treats are okay sometimes, but moderation keeps you feeling good and energetic.",
-    "ideal breakfast": "A healthy breakfast could be eggs, oats, or even a smoothie. It sets the tone for the day!",
-    "lunch": "Include a mix of proteins, vegetables, and whole grains to keep your energy steady.",
-    "dinner": "Keep it light—vegetables and protein work best, and avoid heavy carbs before bed.",
-    "a cheat day": "It’s okay to treat yourself once in a while. Balance is key!",
-    "need motivation": "Remember, consistency is more important than perfection. You’ve got this!",
-    "how to overcome stress": "Take a deep breath, maybe a short walk, or just relax for a few minutes—it helps a lot!",
-    "fiber foods benefits": "Eating fruits, vegetables, and oats helps digestion and keeps you feeling lighter.",
-  };
+  // A list to manually manage the conversation history
+  final List<Content> _history = [];
 
-  String _generateBotReply(String userMessage) {
-    final msgLower = userMessage.toLowerCase();
-    for (var keyword in _keywordReplies.keys) {
-      if (msgLower.contains(keyword)) {
-        return _keywordReplies[keyword]!;
-      }
-    }
-    return "I see! Can you tell me a bit more, so I can give better advice?";
+  @override
+  void initState() {
+    super.initState();
+    gemini = Gemini.instance;
+
+    // Add the persona as the first item in the history.
+    // This instructs the model on how to behave for the entire session.
+    _history.add(
+      Content(
+        role: 'model', // Use 'model' to set the initial assistant persona
+        parts: [
+          Part.text(
+            "You are CAL AI, the official assistant for the CAL AI diet app. Your function is to answer user questions about general nutrition, calories, and hydration. "
+            "Suggest Meal plans, Healthy recipes, Calorie info, Water intake tips etc."
+            "Engage in useful conversations with the user, ask follow up questions to better understand their needs, and provide actionable advice."
+            "Tone: Helpful, clear, and positive."
+            "Core Directive: Always connect your answers back to the app's tools where possible."
+          )
+        ]
+      )
+    );
+
+    _addWelcomeMessage();
   }
 
-  void _sendMessage() async {
-    final text = _controller.text.trim();
+  void _addWelcomeMessage() {
+    setState(() {
+      _messages.add(ChatMessage(
+        text:
+            "Hi! I'm your diet assistant CALAI. I can help you with meal planning, nutrition advice, calorie counting, and healthy recipe suggestions. What would you like to know?",
+        isBot: true,
+        timestamp: DateTime.now(),
+      ));
+    });
+  }
+
+    Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    _controller.clear();
-
-    // Add user message locally
+    // Add user message to the UI
     setState(() {
-      _messages.add({'role': 'user', 'content': text});
+      _messages.add(ChatMessage(
+        text: text,
+        isBot: false,
+        timestamp: DateTime.now(),
+      ));
       _isLoading = true;
     });
 
-    // Generate bot reply
-    String botReply = _generateBotReply(text);
+    _messageController.clear();
+    _scrollToBottom();
 
-    // Add bot reply locally
-    setState(() {
-      _messages.add({'role': 'bot', 'content': botReply});
-      _isLoading = false;
-    });
+    try {
+      // 1. Add the user's message to the conversation history
+      _history.add(Content(role: 'user', parts: [Part.text(text)]));
 
-    // Save messages to Firebase
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(user.uid)
-            .set({
-          'messages': FieldValue.arrayUnion([
-            {'role': 'user', 'content': text},
-            {'role': 'bot', 'content': botReply},
-          ])
-        }, SetOptions(merge: true));
-      } catch (e) {
-        print("Firebase save error: $e");
+      // 2. Send the entire history to the Gemini API
+      final response = await gemini.chat(_history);
+      final responseText = response?.output ?? "Sorry, I couldn't process the response.";
+
+      // 3. **CORRECTED PART**: Add a null check before adding to history
+      if (response != null && response.content != null) {
+        // This ensures we only add a valid, non-null Content object
+        _history.add(response.content!); 
       }
+
+      // Add bot response to the UI
+      setState(() {
+        _messages.add(ChatMessage(
+          text: responseText,
+          isBot: true,
+          timestamp: DateTime.now(),
+        ));
+        _isLoading = false;
+      });
+    } catch (e) {
+      // Handle errors
+      setState(() {
+        _messages.add(ChatMessage(
+          text: "Sorry, I encountered an error. Please try again later.",
+          isBot: true,
+          timestamp: DateTime.now(),
+        ));
+        _isLoading = false;
+      });
     }
+
+    _scrollToBottom();
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Diet Chatbot"),
-        backgroundColor: Colors.green,
+        title: const Text(
+          'CALAI Assistant',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.teal.shade600,
+        foregroundColor: Colors.white,
+        elevation: 2,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.clear_all),
+            onPressed: _clearChat,
+            tooltip: 'Clear Chat',
+          ),
+        ],
       ),
       body: Column(
         children: [
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: _messages.length,
+              controller: _scrollController,
+              padding: const EdgeInsets.all(16),
+              itemCount: _messages.length + (_isLoading ? 1 : 0),
               itemBuilder: (context, index) {
-                final msg = _messages[index];
-                final isUser = msg['role'] == 'user';
-                return Align(
-                  alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isUser ? Colors.green : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      msg['content']!,
-                      style: TextStyle(color: isUser ? Colors.white : Colors.black87),
-                    ),
-                  ),
-                );
+                if (index == _messages.length) {
+                  return _buildTypingIndicator();
+                }
+                return _buildMessageBubble(_messages[index]);
               },
             ),
           ),
-          if (_isLoading) const LinearProgressIndicator(),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: "Ask me anything about your health...",
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  color: Colors.green,
-                  onPressed: _isLoading ? null : _sendMessage,
-                ),
-              ],
-            ),
-          )
+          _buildQuickActions(),
+          _buildMessageInput(),
         ],
       ),
     );
   }
+
+  Widget _buildMessageBubble(ChatMessage message) {
+     return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment:
+            message.isBot ? MainAxisAlignment.start : MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (message.isBot) ...[
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.teal.shade600,
+              child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: message.isBot ? Colors.grey.shade200 : Colors.teal.shade600,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  message.isBot
+                      ? MarkdownBody(
+                          data: message.text,
+                          styleSheet: MarkdownStyleSheet(
+                            p: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 16,
+                            ),
+                            strong: TextStyle(
+                              color: Colors.teal.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        )
+                      : Text(
+                          message.text,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatTime(message.timestamp),
+                    style: TextStyle(
+                      color: message.isBot ? Colors.grey.shade600 : Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (!message.isBot) ...[
+            const SizedBox(width: 8),
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.blue.shade600,
+              child: const Icon(Icons.person, color: Colors.white, size: 18),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+     return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.teal.shade600,
+            child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Colors.teal.shade600),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text('Thinking...'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    final quickActions = [
+      {'text': 'Meal plan for today', 'icon': Icons.restaurant_menu},
+      {'text': 'Healthy recipes', 'icon': Icons.auto_stories},
+      {'text': 'Calorie info', 'icon': Icons.calculate},
+      {'text': 'Water intake tips', 'icon': Icons.water_drop},
+    ];
+
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: quickActions.length,
+        itemBuilder: (context, index) {
+          final action = quickActions[index];
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ActionChip(
+              avatar: Icon(
+                action['icon'] as IconData,
+                size: 18,
+                color: Colors.teal.shade600,
+              ),
+              label: Text(
+                action['text'] as String,
+                style: TextStyle(
+                  color: Colors.teal.shade600,
+                  fontSize: 12,
+                ),
+              ),
+              onPressed: () {
+                _messageController.text = action['text'] as String;
+                _sendMessage();
+              },
+              backgroundColor: Colors.teal.shade50,
+              side: BorderSide(color: Colors.teal.shade200),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMessageInput() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade300,
+            blurRadius: 5,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _messageController,
+              decoration: InputDecoration(
+                hintText: 'Ask about nutrition, recipes, or diet tips...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide(color: Colors.teal.shade600),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                prefixIcon: Icon(
+                  Icons.chat_bubble_outline,
+                  color: Colors.teal.shade600,
+                ),
+              ),
+              onSubmitted: (_) => _sendMessage(),
+              textInputAction: TextInputAction.send,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.teal.shade600,
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.send, color: Colors.white),
+              onPressed: _isLoading ? null : _sendMessage,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearChat() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clear Chat'),
+        content: const Text('Are you sure you want to clear all messages?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _messages.clear();
+                
+                // Also clear the history and re-add the persona
+                _history.clear();
+                _history.add(
+                  Content(
+                    role: 'model',
+                    parts: [
+                      Part.text(
+                        "You are CALAI, a friendly, encouraging, and knowledgeable diet assistant. "
+                        "Your goal is to provide safe, helpful, and positive advice on nutrition, meal planning, and healthy living. "
+                        "Never give specific medical advice. Always be supportive and use a cheerful tone."
+                      )
+                    ]
+                  )
+                );
+                
+                _addWelcomeMessage();
+              });
+              Navigator.pop(context);
+            },
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+}
+
+class ChatMessage {
+  final String text;
+  final bool isBot;
+  final DateTime timestamp;
+
+  ChatMessage({
+    required this.text,
+    required this.isBot,
+    required this.timestamp,
+  });
 }

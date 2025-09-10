@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_gemini/flutter_gemini.dart'; // 1. Import the Gemini package
 import 'firebase_options.dart';
 
 // Import your screens
@@ -14,9 +15,16 @@ import 'screens/reports_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // It's good practice to initialize all services before running the app
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // 2. Initialize Gemini with your API Key
+  // IMPORTANT: Replace 'YOUR_GEMINI_API_KEY' with your actual key
+  Gemini.init(apiKey: 'AIzaSyB3FMyEttVbsGDl2DCpaFQAj9DePfXUq7A');
+
   runApp(const CALAIApp());
 }
 
@@ -44,7 +52,7 @@ class CALAIApp extends StatelessWidget {
         '/diet': (context) => const DietTrackerScreen(),
         '/water': (context) => const WaterTrackerScreen(),
         '/bmi': (context) => const BMICalculatorScreen(),
-        '/chatbot': (context) => const ChatbotScreen(),
+        '/chatbot': (context) => DietChatbot(),
         '/reports': (context) => const ReportsScreen(),
       },
     );
