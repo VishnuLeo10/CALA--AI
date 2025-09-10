@@ -30,6 +30,7 @@ dependencies:
   cloudinary_public: 0.23.1
   flutter_dotenv: ^5.1.0
   intl: ^0.19.0
+  flutter_launcher_icons: ^0.13.1
 
 dev_dependencies:
   flutter_test:
@@ -43,3 +44,8 @@ flutter:
     - assets/images/login_hii.jpg
     - assets/images/login_vector.png
     - assets/images/register_vector.png
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png" # IMPORTANT: Create this path and place your icon image here
