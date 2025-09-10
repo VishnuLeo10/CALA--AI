@@ -1,108 +1,223 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+// ✅ FIX: Removed unused import 'dart:async'.
+// import 'dart:async';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  // --- MOCK DATA ---
-  // In a real app, you would get this from your state management/database
-  final String userName = "Joel"; // Let's assume you fetch the user's name
-  final int caloriesConsumed = 1250;
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final int calorieGoal = 2000;
-  final int waterConsumed = 1500; // in ml
-  final int waterGoal = 2500; // in ml
-  // --- END MOCK DATA ---
+  final int waterGoal = 2500;
+
+  Map<String, Timestamp> _getTodayDateRange() {
+    final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
+    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
+    return {
+      'start': Timestamp.fromDate(startOfToday),
+      'end': Timestamp.fromDate(endOfToday),
+    };
+  }
+
+  String _todayDocId() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Calculate progress for the UI
-    double calorieProgress = (caloriesConsumed / calorieGoal).clamp(0.0, 1.0);
-    double waterProgress = (waterConsumed / waterGoal).clamp(0.0, 1.0);
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return const Scaffold(body: Center(child: Text("User not logged in.")));
+    }
+
+    final dateRange = _getTodayDateRange();
 
     return Scaffold(
-      // A transparent app bar allows the body to scroll underneath for a modern feel
       appBar: AppBar(
         title: const Text("Your Dashboard"),
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black87,
       ),
-      backgroundColor: Colors.grey[50], // A slightly off-white background
+      backgroundColor: Colors.grey[50],
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0),
         children: [
-          _buildGreeting(userName),
+          _buildGreeting(user.uid),
           const SizedBox(height: 24),
-          _buildStatusDashboard(context, calorieProgress, waterProgress),
+          _buildStatusDashboard(user.uid, dateRange),
           const SizedBox(height: 24),
-          _buildSectionHeader(context, "Quick Actions"),
+          _buildSectionHeader("Quick Actions"),
           const SizedBox(height: 16),
           _buildFeatureGrid(context),
           const SizedBox(height: 24),
-          _buildDailyTip(context),
+          _buildDailyTip(),
           const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  /// Builds the personalized greeting section.
-  Widget _buildGreeting(String name) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Hello, $name",
-          style: const TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
-        ),
-        const Text(
-          "Ready to crush your goals today?",
-          style: TextStyle(fontSize: 16, color: Colors.grey),
-        ),
-      ],
+  Widget _buildGreeting(String uid) {
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('users').doc(uid).get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Hello...",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              Text(
+                "Loading your details...",
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            ],
+          );
+        }
+
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Hello, User",
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              Text(
+                "Ready to crush your goals today?",
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
+            ],
+          );
+        }
+
+        final userData = snapshot.data!.data() as Map<String, dynamic>;
+        final userName = userData['name'] ?? 'User';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Hello, $userName",
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const Text(
+              "Ready to crush your goals today?",
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  /// Builds the main status cards for calories and water.
-  Widget _buildStatusDashboard(
-    BuildContext context,
-    double calProgress,
-    double waterProgress,
-  ) {
+  Widget _buildStatusDashboard(String uid, Map<String, Timestamp> dateRange) {
     return Row(
       children: [
         Expanded(
-          child: _StatusCard(
-            title: "Calories",
-            consumed: caloriesConsumed,
-            goal: calorieGoal,
-            unit: "kcal",
-            progress: calProgress,
-            color: Colors.orange,
-            icon: Icons.local_fire_department,
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore
+                .collection('users')
+                .doc(uid)
+                .collection('meals')
+                .where('timestamp', isGreaterThanOrEqualTo: dateRange['start'])
+                .where('timestamp', isLessThanOrEqualTo: dateRange['end'])
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              // ✅ FIX: Renamed 'sum' to 'total' to avoid linting warning.
+              int caloriesConsumed = snapshot.data!.docs.fold(
+                0,
+                (total, doc) =>
+                    total +
+                    ((doc.data() as Map<String, dynamic>)['calories'] as int? ??
+                        0),
+              );
+
+              double calorieProgress = (caloriesConsumed / calorieGoal).clamp(
+                0.0,
+                1.0,
+              );
+
+              return _StatusCard(
+                title: "Calories",
+                consumed: caloriesConsumed,
+                goal: calorieGoal,
+                unit: "kcal",
+                progress: calorieProgress,
+                color: Colors.orange,
+                icon: Icons.local_fire_department,
+              );
+            },
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: _StatusCard(
-            title: "Water",
-            consumed: waterConsumed,
-            goal: waterGoal,
-            unit: "ml",
-            progress: waterProgress,
-            color: Colors.blue,
-            icon: Icons.water_drop,
+          child: StreamBuilder<DocumentSnapshot>(
+            stream: _firestore
+                .collection('users')
+                .doc(uid)
+                .collection('water')
+                .doc(_todayDocId())
+                .snapshots(),
+            builder: (context, snapshot) {
+              int waterConsumed = 0;
+              if (snapshot.hasData && snapshot.data!.exists) {
+                final data = snapshot.data!.data() as Map<String, dynamic>;
+                waterConsumed = data['ml'] ?? 0;
+              }
+
+              double waterProgress = (waterConsumed / waterGoal).clamp(
+                0.0,
+                1.0,
+              );
+
+              return _StatusCard(
+                title: "Water",
+                consumed: waterConsumed,
+                goal: waterGoal,
+                unit: "ml",
+                progress: waterProgress,
+                color: Colors.blue,
+                icon: Icons.water_drop,
+              );
+            },
           ),
         ),
       ],
     );
   }
 
-  /// Builds a simple header for a section.
-  Widget _buildSectionHeader(BuildContext context, String title) {
+  Widget _buildSectionHeader(String title) {
     return Text(
       title,
       style: const TextStyle(
@@ -113,7 +228,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// Builds the grid of features like Diet Tracker, BMI, etc.
   Widget _buildFeatureGrid(BuildContext context) {
     const List<Map<String, dynamic>> features = [
       {
@@ -133,11 +247,10 @@ class HomeScreen extends StatelessWidget {
         "route": "/chatbot",
       },
       {"title": "Reports", "icon": Icons.bar_chart, "route": "/reports"},
-      {"title": "Logout", "icon": Icons.logout, "route": "/login"}, // Example
+      {"title": "Logout", "icon": Icons.logout, "route": "/login"},
     ];
 
     return GridView.builder(
-      // We use physics: NeverScrollableScrollPhysics() because the grid is inside a ListView.
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
       itemCount: features.length,
@@ -153,8 +266,8 @@ class HomeScreen extends StatelessWidget {
           title: feature["title"],
           icon: feature["icon"],
           onTap: () {
-            // Special handling for logout or other non-push routes
             if (feature["route"] == "/login") {
+              FirebaseAuth.instance.signOut();
               Navigator.pushNamedAndRemoveUntil(
                 context,
                 '/login',
@@ -169,8 +282,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// Builds the "Daily Tip" card at the bottom.
-  Widget _buildDailyTip(BuildContext context) {
+  Widget _buildDailyTip() {
     return Card(
       elevation: 2,
       color: Colors.teal.shade50,
@@ -208,9 +320,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// --- HELPER WIDGETS FOR CLEANER CODE ---
-
-/// A reusable card to display progress for a metric (Calories, Water).
+// --- HELPER WIDGETS (Unchanged) ---
 class _StatusCard extends StatelessWidget {
   final String title;
   final int consumed;
@@ -280,7 +390,6 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
-/// A reusable card for the feature grid.
 class _FeatureCard extends StatelessWidget {
   final String title;
   final IconData icon;
