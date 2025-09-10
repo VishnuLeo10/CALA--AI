@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
+import 'package:intl/intl.dart'; // Add this import
 import 'dart:typed_data';
 import 'dart:convert';
 
@@ -55,10 +56,9 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
         // Clean the response - remove any extra formatting
         String cleanResponse = textResponse
             .replaceAll(
-              RegExp(r'```'), // Properly closed RegExp pattern
+              RegExp(r'```[\w]*'),
               '',
             ) // Remove all code block markers
-            .replaceAll('\n', '')
             .trim();
         final foodName = _parseValue(cleanResponse, "food_name");
         final caloriesStr = _parseValue(cleanResponse, "estimated_calories");
@@ -186,11 +186,12 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
       return;
     }
 
-    // Save meal data without image URL
+    // Save meal data with current timestamp
     await _firestore.collection('users').doc(user.uid).collection('meals').add({
       'meal': meal,
       'calories': calories,
       'timestamp': FieldValue.serverTimestamp(),
+      'createdAt': DateTime.now().millisecondsSinceEpoch, // For immediate display
     });
 
     // Clear form and reset image
@@ -207,6 +208,89 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
         backgroundColor: Colors.green,
       ),
     );
+  }
+
+  // --- Delete Meal Function ---
+  Future<void> _deleteMeal(String mealId, String mealName) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    // Show confirmation dialog
+    final bool? confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Meal'),
+          content: Text('Are you sure you want to delete "$mealName"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmDelete == true) {
+      try {
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('meals')
+            .doc(mealId)
+            .delete();
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Meal deleted successfully!"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to delete meal: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // --- Format Timestamp Function ---
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return 'Just now';
+    
+    DateTime dateTime;
+    if (timestamp is Timestamp) {
+      dateTime = timestamp.toDate();
+    } else if (timestamp is int) {
+      dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    } else {
+      return 'Unknown time';
+    }
+    
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    if (difference.inDays == 0) {
+      // Same day - show time
+      return DateFormat('h:mm a').format(dateTime);
+    } else if (difference.inDays == 1) {
+      // Yesterday
+      return 'Yesterday ${DateFormat('h:mm a').format(dateTime)}';
+    } else {
+      // Older - show date and time
+      return DateFormat('MMM d, h:mm a').format(dateTime);
+    }
   }
 
   @override
@@ -333,7 +417,7 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Today\'s Meals',
+              'Your Meals',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
@@ -351,7 +435,7 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Padding(
                     padding: EdgeInsets.all(20.0),
-                    child: Center(child: Text("No meals added yet for today.")),
+                    child: Center(child: Text("No meals added yet.")),
                   );
                 }
                 final meals = snapshot.data!.docs;
@@ -360,10 +444,15 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: meals.length,
                   itemBuilder: (context, index) {
-                    final data = meals[index].data()! as Map<String, dynamic>;
+                    final doc = meals[index];
+                    final data = doc.data()! as Map<String, dynamic>;
                     return MealCard(
+                      mealId: doc.id,
                       mealType: data['meal'] ?? 'Unknown Meal',
                       calories: data['calories'] ?? 0,
+                      timestamp: data['timestamp'] ?? data['createdAt'],
+                      onDelete: _deleteMeal,
+                      formatTimestamp: _formatTimestamp,
                     );
                   },
                 );
@@ -377,13 +466,21 @@ class _DietTrackerScreenState extends State<DietTrackerScreen> {
 }
 
 class MealCard extends StatelessWidget {
+  final String mealId;
   final String mealType;
   final int calories;
+  final dynamic timestamp;
+  final Function(String, String) onDelete;
+  final String Function(dynamic) formatTimestamp;
 
   const MealCard({
     super.key,
+    required this.mealId,
     required this.mealType,
     required this.calories,
+    required this.timestamp,
+    required this.onDelete,
+    required this.formatTimestamp,
   });
 
   @override
@@ -398,7 +495,26 @@ class MealCard extends StatelessWidget {
           mealType,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
-        subtitle: Text('$calories kcal'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$calories kcal'),
+            const SizedBox(height: 4),
+            Text(
+              'Added: ${formatTimestamp(timestamp)}',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline, color: Colors.red),
+          onPressed: () => onDelete(mealId, mealType),
+          tooltip: 'Delete meal',
+        ),
+        isThreeLine: true,
       ),
     );
   }
