@@ -8,23 +8,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+// 1. Import your main.dart file which contains your root widget
 import 'package:calai/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  // 2. We are no longer testing a counter, so we rename the test
+  testWidgets('LoginScreen has welcome text and a login button', (
+    WidgetTester tester,
+  ) async {
+    // 3. Build our app, not the default 'MyApp', but your 'CALAIApp'
+    await tester.pumpWidget(const CALAIApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Because your app's initialRoute is '/login', the LoginScreen will be displayed.
+    // Now we can verify that widgets on the LoginScreen are present.
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // Verify that the welcome text is shown.
+    expect(find.text('Welcome to CALAI'), findsOneWidget);
+    expect(find.text('Your AI Diet Companion'), findsOneWidget);
 
-    // Verify that our counter has incremented.
+    // Verify that the email and password fields (TextFields) exist.
+    expect(find.byType(TextField), findsNWidgets(2));
+
+    // Verify the login button is present.
+    // Using widgetWithText is more specific than just find.text('Login')
+    expect(find.widgetWithText(ElevatedButton, 'Login'), findsOneWidget);
+
+    // Verify the register button text is present.
+    expect(find.text("Don't have an account? Register"), findsOneWidget);
+
+    // This checks that the old counter app text is NOT present.
     expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.byIcon(Icons.add), findsNothing);
   });
 }

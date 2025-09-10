@@ -3,7 +3,8 @@ import 'package:flutter_gemini/flutter_gemini.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 class DietChatbot extends StatefulWidget {
-  const DietChatbot({Key? key}) : super(key: key);
+  // ✅ FIX 1: Converted 'key' to a super parameter for cleaner syntax.
+  const DietChatbot({super.key});
 
   @override
   State<DietChatbot> createState() => _DietChatbotState();
@@ -19,53 +20,53 @@ class _DietChatbotState extends State<DietChatbot> {
   // A list to manually manage the conversation history
   final List<Content> _history = [];
 
+  // Centralized persona for consistency
+  final Content _persona = Content(
+    role: 'model', // Use 'model' to set the initial assistant persona
+    parts: [
+      Part.text(
+        "You are CAL AI, the official assistant for the CAL AI diet app. Your function is to answer user questions about general nutrition, calories, and hydration. "
+        "Suggest Meal plans, Healthy recipes, Calorie info, Water intake tips etc."
+        "Engage in useful conversations with the user, ask follow up questions to better understand their needs, and provide actionable advice."
+        "Tone: Helpful, clear, and positive."
+        "Core Directive: Always connect your answers back to the app's tools where possible.",
+      ),
+    ],
+  );
+
   @override
   void initState() {
     super.initState();
     gemini = Gemini.instance;
 
     // Add the persona as the first item in the history.
-    // This instructs the model on how to behave for the entire session.
-    _history.add(
-      Content(
-        role: 'model', // Use 'model' to set the initial assistant persona
-        parts: [
-          Part.text(
-            "You are CAL AI, the official assistant for the CAL AI diet app. Your function is to answer user questions about general nutrition, calories, and hydration. "
-            "Suggest Meal plans, Healthy recipes, Calorie info, Water intake tips etc."
-            "Engage in useful conversations with the user, ask follow up questions to better understand their needs, and provide actionable advice."
-            "Tone: Helpful, clear, and positive."
-            "Core Directive: Always connect your answers back to the app's tools where possible."
-          )
-        ]
-      )
-    );
+    _history.add(_persona);
 
     _addWelcomeMessage();
   }
 
   void _addWelcomeMessage() {
     setState(() {
-      _messages.add(ChatMessage(
-        text:
-            "Hi! I'm your diet assistant CALAI. I can help you with meal planning, nutrition advice, calorie counting, and healthy recipe suggestions. What would you like to know?",
-        isBot: true,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(
+        ChatMessage(
+          text:
+              "Hi! I'm your diet assistant CALAI. I can help you with meal planning, nutrition advice, calorie counting, and healthy recipe suggestions. What would you like to know?",
+          isBot: true,
+          timestamp: DateTime.now(),
+        ),
+      );
     });
   }
 
-    Future<void> _sendMessage() async {
+  Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
     // Add user message to the UI
     setState(() {
-      _messages.add(ChatMessage(
-        text: text,
-        isBot: false,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(
+        ChatMessage(text: text, isBot: false, timestamp: DateTime.now()),
+      );
       _isLoading = true;
     });
 
@@ -78,31 +79,35 @@ class _DietChatbotState extends State<DietChatbot> {
 
       // 2. Send the entire history to the Gemini API
       final response = await gemini.chat(_history);
-      final responseText = response?.output ?? "Sorry, I couldn't process the response.";
+      final responseText =
+          response?.output ?? "Sorry, I couldn't process the response.";
 
-      // 3. **CORRECTED PART**: Add a null check before adding to history
+      // 3. Add the model's response to the history for context in the next turn
       if (response != null && response.content != null) {
-        // This ensures we only add a valid, non-null Content object
-        _history.add(response.content!); 
+        _history.add(response.content!);
       }
 
       // Add bot response to the UI
       setState(() {
-        _messages.add(ChatMessage(
-          text: responseText,
-          isBot: true,
-          timestamp: DateTime.now(),
-        ));
+        _messages.add(
+          ChatMessage(
+            text: responseText,
+            isBot: true,
+            timestamp: DateTime.now(),
+          ),
+        );
         _isLoading = false;
       });
     } catch (e) {
       // Handle errors
       setState(() {
-        _messages.add(ChatMessage(
-          text: "Sorry, I encountered an error. Please try again later.",
-          isBot: true,
-          timestamp: DateTime.now(),
-        ));
+        _messages.add(
+          ChatMessage(
+            text: "Sorry, I encountered an error. Please try again later.",
+            isBot: true,
+            timestamp: DateTime.now(),
+          ),
+        );
         _isLoading = false;
       });
     }
@@ -128,9 +133,7 @@ class _DietChatbotState extends State<DietChatbot> {
       appBar: AppBar(
         title: const Text(
           'CALAI Assistant',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.teal.shade600,
         foregroundColor: Colors.white,
@@ -166,11 +169,12 @@ class _DietChatbotState extends State<DietChatbot> {
   }
 
   Widget _buildMessageBubble(ChatMessage message) {
-     return Padding(
+    return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment:
-            message.isBot ? MainAxisAlignment.start : MainAxisAlignment.end,
+        mainAxisAlignment: message.isBot
+            ? MainAxisAlignment.start
+            : MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (message.isBot) ...[
@@ -188,11 +192,14 @@ class _DietChatbotState extends State<DietChatbot> {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
-                color: message.isBot ? Colors.grey.shade200 : Colors.teal.shade600,
+                color: message.isBot
+                    ? Colors.grey.shade200
+                    : Colors.teal.shade600,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    // ✅ FIX 2: Replaced deprecated withOpacity with withAlpha
+                    color: Colors.black.withAlpha(26), // 26 is ~10% opacity
                     blurRadius: 3,
                     offset: const Offset(0, 1),
                   ),
@@ -226,7 +233,9 @@ class _DietChatbotState extends State<DietChatbot> {
                   Text(
                     _formatTime(message.timestamp),
                     style: TextStyle(
-                      color: message.isBot ? Colors.grey.shade600 : Colors.white70,
+                      color: message.isBot
+                          ? Colors.grey.shade600
+                          : Colors.white70,
                       fontSize: 12,
                     ),
                   ),
@@ -248,7 +257,7 @@ class _DietChatbotState extends State<DietChatbot> {
   }
 
   Widget _buildTypingIndicator() {
-     return Padding(
+    return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
@@ -272,8 +281,9 @@ class _DietChatbotState extends State<DietChatbot> {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.teal.shade600),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.teal.shade600,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -312,10 +322,7 @@ class _DietChatbotState extends State<DietChatbot> {
               ),
               label: Text(
                 action['text'] as String,
-                style: TextStyle(
-                  color: Colors.teal.shade600,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.teal.shade600, fontSize: 12),
               ),
               onPressed: () {
                 _messageController.text = action['text'] as String;
@@ -404,22 +411,12 @@ class _DietChatbotState extends State<DietChatbot> {
             onPressed: () {
               setState(() {
                 _messages.clear();
-                
+
                 // Also clear the history and re-add the persona
                 _history.clear();
-                _history.add(
-                  Content(
-                    role: 'model',
-                    parts: [
-                      Part.text(
-                        "You are CALAI, a friendly, encouraging, and knowledgeable diet assistant. "
-                        "Your goal is to provide safe, helpful, and positive advice on nutrition, meal planning, and healthy living. "
-                        "Never give specific medical advice. Always be supportive and use a cheerful tone."
-                      )
-                    ]
-                  )
-                );
-                
+                // ✅ BONUS FIX: Re-add the consistent, detailed persona
+                _history.add(_persona);
+
                 _addWelcomeMessage();
               });
               Navigator.pop(context);

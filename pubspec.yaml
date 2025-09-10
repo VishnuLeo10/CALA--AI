@@ -1,6 +1,6 @@
 name: calai
 description: "A new Flutter project."
-publish_to: 'none'
+publish_to: "none"
 
 version: 1.0.0+1
 
@@ -12,7 +12,7 @@ dependencies:
     sdk: flutter
   http: ^1.1.0
   flutter_markdown: ^0.6.18
-  
+
   flutter_gemini: ^3.0.0
   google_generative_ai: ^0.4.7
 
@@ -27,7 +27,6 @@ dependencies:
   firebase_storage: ^13.0.1
   firebase_analytics: ^12.0.1
 
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -38,3 +37,5 @@ flutter:
 
   assets:
     - assets/images/login_hii.jpg
+    - assets/images/login_vector.png
+    - assets/images/register_vector.png
